@@ -34,8 +34,9 @@ than a check. Nothing was ever lost; every gap was data still sitting in the old
   goes missing, check that it's loaded before debugging it.
 - **The launch directory matters as much as the profile.** Plugins and auto-memory that key
   on the working directory put everything launched from one parent folder into one shared
-  slot. Launching everything from `~/projects` meant each project's handoff overwrote the
-  last for over two weeks. Launch inside the project folder (`ccw` in `scripts/profiles.sh`).
+  slot. Every session was launched from `~/projects` (the folder that holds every project),
+  so for over two weeks the memory plugin's end-of-session summary for one project
+  overwrote the summary for another. Launch inside the project folder (`ccw` in `scripts/profiles.sh`).
   Anything that must survive across sessions belongs in a file in the project, not in
   per-session state.
 - **Record setup steps.** The directories and aliases were created by hand with no record, so

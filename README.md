@@ -11,6 +11,26 @@ setup checklist, and the scripts used.
 - **The Linux server:** an always-on Linux machine reached over SSH from the Mac. It hosts
   scheduled jobs, dashboards, and a Claude Code profile of its own.
 
+## The setup this is based on
+
+Nothing below is required by Claude Code. It's how the author's machines are organised, and
+the rest of the guide refers back to it.
+
+- **One folder holds every project.** On the server that's `~/projects`: each project is a
+  subfolder (`~/projects/notes`, `~/projects/website`, and so on), and most are git repos.
+  The Mac keeps its own clones of the same repos in `~/Documents/GitHub`. GitHub is how the
+  two copies stay in sync; files are never edited across the SSH connection.
+- **A dashboard on the server.** A small self-hosted web page, built for this setup, that
+  lists each project's status and holds shared settings such as the session-naming options
+  below. Not included here.
+- **A key store.** API keys live as files in one folder, the same path on both machines,
+  copied from the Mac to the server by a small script. Not included here.
+- **Handoff notes.** Each project keeps a short Markdown file (`HANDOFF.md` or similar)
+  saying what state the work is in, so whichever machine picks it up next can read it.
+
+Adjust the folder names to your own layout; `scripts/profiles.sh` takes the projects folder
+as a setting (`PROJECTS_ROOT`).
+
 **Contents:**
 
 | Path | What it is |
@@ -24,7 +44,7 @@ setup checklist, and the scripts used.
 | `git-guard/` | Lets Claude run git freely but asks before anything goes public |
 
 The session-title hook and the git guard described below were built as part of the author's
-custom Claude Code dashboard setup, not taken from Claude Code itself. The git guard runs
+custom setup, alongside the dashboard, not taken from Claude Code itself. The git guard runs
 standalone and is included. The session-title hook reads its settings from that dashboard, so
 it's described but not included.
 
@@ -61,11 +81,12 @@ inside one.
   nothing starts in the default profile by accident.
 - **A shared plugin store** (`CLAUDE_CODE_PLUGIN_CACHE_DIR`), so a plugin installed once is
   visible to every profile. Each profile still enables its own.
-- **`ccw <project>`,** a shortcut that starts Claude Code already inside that project's
-  folder: `ccw notes` is the same as `cd ~/projects/notes` and then `claude`. It matters
+- **`ccw <project>`,** a shortcut that starts Claude Code already inside one project's
+  folder within the projects folder: `ccw notes` is the same as `cd ~/projects/notes` and
+  then `claude`. It matters
   because Claude Code files its memory (what it has learned about how you work, and notes
   some plugins keep) under the folder a session was started in. Start every session from
-  `~/projects` and every project shares one memory. Start each one inside its own project
+  `~/projects` itself and every project shares one memory. Start each one inside its own project
   folder and each project gets its own. Your terminal stays in whatever folder it was in.
 
 A profile name is only a label. Nothing about the name scopes what the profile can work on.
@@ -75,9 +96,9 @@ A profile name is only a label. Nothing about the name scopes what the profile c
 **The arrangement:** VS Code on the Mac with two terminal panels.
 
 - **Server panel:** SSH'd into the Linux server, running Claude Code under a named profile,
-  working in `~/projects`.
-- **Mac panel:** plain `claude` (default `~/.claude` profile), working in the Mac's own
-  checkout folder (`~/Documents/GitHub` here).
+  working in the server's projects folder (`~/projects`).
+- **Mac panel:** plain `claude` (default `~/.claude` profile), working in the Mac's projects
+  folder (`~/Documents/GitHub`).
 
 ### What's shared and what isn't
 
@@ -95,7 +116,7 @@ A profile name is only a label. Nothing about the name scopes what the profile c
 Memory is the row that causes trouble. Whatever one instance learns about the user's
 preferences stays in that machine's profile. The other instance never sees it, and can repeat
 a mistake the first one stopped making. Anything both need to know belongs in a file in the
-repo (a README, a HANDOFF.md), not in either instance's memory.
+repo (a README, the handoff note), not in either instance's memory.
 
 ### What to keep the same on both
 
@@ -108,7 +129,7 @@ repo (a README, a HANDOFF.md), not in either instance's memory.
   keeps the last copy for when the server is off. Worth copying as an idea: when two machines
   each have their own conversation list, names that carry the project and the time are what
   make the lists readable.
-- **API keys:** one key store in the same place on both machines, synced from the Mac.
+- **API keys:** the key store, at the same path on both machines, copied from the Mac.
 
 Anything else wanted on both (a new hook, a plugin, the retention setting) has to be done
 twice. The git guard installer updates every `~/.claude*/settings.json` on the machine it
@@ -118,20 +139,21 @@ runs on, so run it once per machine.
 
 - **Tell the panels apart.** Rename the VS Code terminal tabs "Mac" and "Server"
   (right-click the tab, Rename), and check the `user@host` in each shell prompt. `~` and
-  `~/projects` can exist on both with different contents, so a path alone never shows which
+  a folder like `~/projects` can exist on both with different contents, so a path alone never shows which
   machine a panel is on.
 - **One repo, one instance at a time.** The two machines hold separate clones. If both edit
   the same repo at once, the result is a merge instead of a handoff. For a repo worked on
   from both, a simple rule helps: the Mac works on `main`, the server works on its own branch
-  (a hook can refuse server pushes to `main`), and the Mac merges the server branch in.
+  (a git `pre-push` hook in that repo can refuse server pushes to `main`), and the Mac merges
+  the server branch in.
 - **Hand off through git and a file.** Finish on one machine with a commit, a push and a
-  short handoff note; start on the other with a pull and that note. Neither instance can
+  the handoff note updated; start on the other with a pull and a read of that note. Neither instance can
   read the other's conversation.
 - **SSH runs one way.** The Mac can reach the server; the server can't reach the Mac. The
   server instance can prepare a script or a commit, but anything that runs on the Mac is run
   by the user or by the Mac instance.
-- **Put heavy work on the faster machine.** Here the server is an older laptop, and an OCR
-  workload ran about 15x faster once moved to the Mac. The server suits always-on work:
+- **Put heavy work on the faster machine.** Here the server is an older laptop, and one
+  project's text-recognition (OCR) step ran about 15x faster once moved to the Mac. The server suits always-on work:
   dashboards, timers, scheduled jobs, file transfer.
 - **Label every command with its machine.** Ask both instances to say whether a command runs
   on the Mac or on the server (after SSHing in). Paste bare commands, never with a leading
