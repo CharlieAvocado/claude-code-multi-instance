@@ -61,9 +61,12 @@ inside one.
   nothing starts in the default profile by accident.
 - **A shared plugin store** (`CLAUDE_CODE_PLUGIN_CACHE_DIR`), so a plugin installed once is
   visible to every profile. Each profile still enables its own.
-- **`ccw <project>`,** which launches inside `~/projects/<project>` in a subshell. Auto-memory
-  and plugins that key on the working directory then keep separate state per project instead
-  of piling everything into one slot.
+- **`ccw <project>`,** a shortcut that starts Claude Code already inside that project's
+  folder: `ccw notes` is the same as `cd ~/projects/notes` and then `claude`. It matters
+  because Claude Code files its memory (what it has learned about how you work, and notes
+  some plugins keep) under the folder a session was started in. Start every session from
+  `~/projects` and every project shares one memory. Start each one inside its own project
+  folder and each project gets its own. Your terminal stays in whatever folder it was in.
 
 A profile name is only a label. Nothing about the name scopes what the profile can work on.
 

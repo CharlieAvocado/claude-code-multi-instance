@@ -16,8 +16,9 @@ alias claude-work='CLAUDE_CONFIG_DIR=$HOME/.claude-work command claude'
 # alias claude="echo 'Use a profile alias: claude-work'"
 
 # ccw <project> [claude args...]
-# Launches Claude Code inside $PROJECTS_ROOT/<project>, so per-directory state
-# (auto-memory, plugins keyed on the working directory) stays per project.
+# Starts Claude Code inside $PROJECTS_ROOT/<project>. Claude Code files its memory
+# under the folder a session starts in, so this gives each project its own memory
+# instead of every project sharing the one for $PROJECTS_ROOT.
 # Profile defaults to "work"; override with CLAUDE_PROFILE=client ccw <project>.
 ccw() {
     local proj="$1"

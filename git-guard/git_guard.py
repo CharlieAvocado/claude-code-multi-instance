@@ -245,6 +245,27 @@ HEREDOC_RE = re.compile(r"(?<!<)<<(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2(?
 GIT_PUSH_RE = re.compile(r"\bgit\b[\s\S]*\bpush\b")
 GIT_BRANCH_DEL_RE = re.compile(r"\bgit\b[\s\S]*\bbranch\b[\s\S]*(-[A-Za-z]*D|--force|-[A-Za-z]*f)")
 GIT_WORKTREE_RE = re.compile(r"\bgit\b[\s\S]*\bworktree\b[\s\S]*\bremove\b")
+GH_RE = re.compile(r"\bgh\b")
+
+# gh commands that create, publish or change something on GitHub. Checked on
+# every simple command, so they ask even after && or inside bash -c "...";
+# the managed-settings ask rules only match the start of the whole line.
+GH_ASK = {
+    "repo": {"create", "new", "edit", "fork", "sync", "delete", "rename",
+             "archive", "unarchive", "deploy-key"},
+    "pr": {"create", "new", "merge"},
+    "gist": {"create", "new", "edit", "delete", "rename", "clone"},
+    "release": None, "secret": None, "variable": None, "workflow": None,
+    "ssh-key": None, "gpg-key": None, "alias": None, "extension": None,
+    "auth": {"login", "refresh", "setup-git", "token"},
+}
+# Top-level gh commands that never publish. Anything else (including aliases
+# and extensions, which could expand to anything) asks.
+GH_KNOWN = set(GH_ASK) | {"api", "browse", "codespace", "issue", "org", "project",
+                          "cache", "run", "label", "ruleset", "attestation",
+                          "completion", "config", "search", "status", "help",
+                          "--version", "version", "-h", "--help"}
+GH_API_WRITE = ("-X", "--method", "-f", "-F", "--field", "--raw-field", "--input")
 
 
 def strip_heredocs(cmd):
@@ -342,7 +363,7 @@ def analyze(cmd, a, depth=0):
     try:
         tokens = tokenize(cmd)
     except ValueError:
-        if re.search(r"push|branch|worktree", cmd, re.I):
+        if re.search(r"push|branch|worktree|\bgh\b", cmd, re.I):
             raise Unsure("couldn't parse the command")
         return 0
 
@@ -361,7 +382,7 @@ def analyze(cmd, a, depth=0):
         for w in words:
             if any(c in w for c in " \t\n;&|()") and (
                     GIT_PUSH_RE.search(w) or GIT_BRANCH_DEL_RE.search(w)
-                    or GIT_WORKTREE_RE.search(w)):
+                    or GIT_WORKTREE_RE.search(w) or GH_RE.search(w)):
                 sub = Analysis(cwd, a.env, a.visibility)
                 n = analyze(w, sub, depth + 1)
                 for r in sub.reasons:
@@ -428,6 +449,9 @@ def analyze(cmd, a, depth=0):
             cwd = None
             continue
 
+        if os.path.basename(head) == "gh" and not has_expansion(head):
+            check_gh(w, a)
+            continue
         if os.path.basename(head) != "git" or has_expansion(head):
             continue
         n_push, n_explained = git_command(w, cwd, env, a)
@@ -437,6 +461,30 @@ def analyze(cmd, a, depth=0):
     if total_push_tokens > explained_push:
         raise Unsure("'push' appears in a way the guard can't check")
     return pushes
+
+
+def check_gh(w, a):
+    """Ask before any gh command that could create or publish something."""
+    args = w[1:]
+    while args and args[0] in ("-R", "--repo"):
+        args = args[2:]
+    if not args:
+        return
+    top = args[0]
+    if has_expansion(top):
+        a.add("gh subcommand comes from a variable")
+        return
+    if top not in GH_KNOWN:
+        a.add(f"gh {top} is an alias, extension or unknown command")
+        return
+    if top == "api":
+        if any(x.startswith(GH_API_WRITE) for x in args[1:]):
+            a.add("gh api call that can change something on GitHub")
+        return
+    subs = GH_ASK.get(top, set())
+    sub = args[1] if len(args) > 1 else ""
+    if subs is None or sub in subs:
+        a.add(f"gh {top} {sub}".strip() + " can create or publish something on GitHub")
 
 
 def git_command(w, cwd, env, a):

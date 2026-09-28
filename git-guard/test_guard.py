@@ -86,6 +86,24 @@ sh("git checkout -q -b picked && echo p > p && git add p && git commit -q -m p &
 
 ASK, OK = "ask", "ok"
 CASES = [
+    # --- gh anywhere in the command (a public repo was created by
+    # "gh auth switch ... && gh repo create --public" without a prompt)
+    (PRIV, "gh auth switch --user X && gh repo create me/x --public --source . --push", ASK),
+    (PRIV, "gh repo create me/x --private", ASK),
+    (PRIV, "cd /tmp; gh repo edit --visibility public", ASK),
+    (PRIV, "bash -c 'gh repo create me/x --public'", ASK),
+    (PRIV, "echo $(gh gist create f.md)", ASK),
+    (PRIV, "gh -R me/x release create v1", ASK),
+    (PRIV, "gh api -X PATCH repos/me/x -f private=false", ASK),
+    (PRIV, "gh pr create --fill", ASK),
+    (PRIV, "gh mystery-alias", ASK),
+    (PRIV, "gh repo view me/x", OK),
+    (PRIV, "gh auth switch --user X", OK),
+    (PRIV, "gh auth status", OK),
+    (PRIV, "gh api repos/me/x -q .private", OK),
+    (PRIV, "gh pr list && gh issue view 3", OK),
+    (PRIV, "gh gist list", OK),
+    (PRIV, 'git commit -m "fix gh thing"', OK),
     # --- plain pushes
     (PRIV, "git push", OK),
     (PUB, "git push", ASK),

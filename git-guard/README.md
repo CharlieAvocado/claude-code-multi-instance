@@ -18,6 +18,10 @@ has no dependency on the dashboard and runs standalone.
   take precedence over user settings: `/etc/claude-code/` on Linux,
   `/Library/Application Support/ClaudeCode/` on macOS. Any command touching `hooksPath`, the
   guard's files or its approval variable asks.
+- **`gh` commands that create or publish ask,** wherever they appear: `gh repo create`,
+  visibility edits, gists, releases, PRs, writing `gh api` calls, and any `gh` alias or
+  extension. The guard checks every command in a line, including after `&&` and inside
+  `bash -c "..."`, because Claude Code's own ask rules only match the start of the line.
 - Force-push, `git clean`, `filter-branch` and similar stay denied.
 
 ## Install or update
