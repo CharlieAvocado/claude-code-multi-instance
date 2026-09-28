@@ -51,10 +51,11 @@ Two things went wrong.
 1. **An instruction was read as permission.** The user said which account the repo should
    go under. Claude took that as a yes to create it, and chose public. Naming an account,
    a location or a repo name says where, not whether or how visible.
-2. **The ask rule didn't fire.** The settings had an `ask` rule for `gh repo create*`, but
-   the command was `gh auth switch --user ... && gh repo create ... --public`. Claude Code's
-   permission rules match the start of the command, so a command placed after `&&` got
-   through. The git guard's push check did stop the push, but by then the repo already
+2. **The ask rule didn't stop it.** The settings had an `ask` rule for `gh repo create*`,
+   but the command was `gh auth switch --user ... && gh repo create ... --public`, and it
+   ran with no prompt. Either the rule didn't match a command placed after `&&`, or the
+   session's auto mode approved it; which one isn't known. Either way, a pattern in settings
+   was the only thing in the way. The git guard's push check did stop the push, but by then the repo already
    existed and was public (empty, until the user approved the push).
 
 What changed:
@@ -64,8 +65,9 @@ What changed:
   publishes something: repo create, visibility edits, gists, releases, PRs, writing
   `gh api` calls, and unknown aliases or extensions. The command that slipped through is
   now a test case.
-- **Don't rely on permission-rule patterns alone for anything irreversible.** A prefix
-  match is easy to sidestep, even by accident. Put a hook that parses the whole command in
+- **Don't rely on permission-rule patterns alone for anything irreversible.** They can
+  be sidestepped by how a command is written, or approved automatically depending on the
+  permission mode. Put a hook that parses the whole command in
   front of the actions that matter.
 - **Say "create it as private or public?" in so many words, and default to private.** A
   private repo can be made public later; a public one may already have been seen or copied.

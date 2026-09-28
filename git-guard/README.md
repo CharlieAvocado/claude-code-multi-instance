@@ -21,7 +21,8 @@ has no dependency on the dashboard and runs standalone.
 - **`gh` commands that create or publish ask,** wherever they appear: `gh repo create`,
   visibility edits, gists, releases, PRs, writing `gh api` calls, and any `gh` alias or
   extension. The guard checks every command in a line, including after `&&` and inside
-  `bash -c "..."`, because Claude Code's own ask rules only match the start of the line.
+  `bash -c "..."`, rather than relying on Claude Code's own ask rules, which let one such
+  command through.
 - Force-push, `git clean`, `filter-branch` and similar stay denied.
 
 ## Install or update
