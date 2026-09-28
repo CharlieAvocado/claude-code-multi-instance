@@ -1,4 +1,4 @@
-# Running more than one Claude Code
+# Running more than one Claude Code Instance
 
 A working setup for running Claude Code under separate profiles, and for using one Claude
 account from two machines side by side: a local Mac and an always-on Linux server, both
