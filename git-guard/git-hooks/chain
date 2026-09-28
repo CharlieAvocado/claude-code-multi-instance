@@ -1,0 +1,6 @@
+#!/bin/sh
+# core.hooksPath hides each repo's own .git/hooks; this runs the repo's hook
+# of the same name (this file is symlinked under every hook name).
+h="$(git rev-parse --git-common-dir 2>/dev/null)/hooks/$(basename "$0")"
+[ -f "$h" ] && [ -x "$h" ] && exec "$h" "$@"
+exit 0

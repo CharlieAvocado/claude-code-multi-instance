@@ -1,0 +1,19 @@
+{
+  "cleanupPeriodDays": 9000,
+  "permissions": {
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git clean*)",
+      "Bash(git filter-branch*)",
+      "Bash(gh repo delete*)"
+    ],
+    "ask": [
+      "Bash(gh repo create*)",
+      "Bash(gh repo edit*)",
+      "Bash(gh release*)"
+    ],
+    "allow": []
+  },
+  "enabledPlugins": {}
+}
