@@ -21,7 +21,7 @@ the rest of the guide refers back to it.
 
 - **One folder holds every project.** On the server that's `~/projects`: each project is a
   subfolder (`~/projects/notes`, `~/projects/website`, and so on), and most are git repos.
-  The Mac keeps its own clones of the same repos in `~/Documents/GitHub`. GitHub is how the
+  The Mac keeps its own clones of the same repos in `~/GitHub`. GitHub is how the
   two copies stay in sync; files are never edited across the SSH connection.
 - **A dashboard on the server.** A small self-hosted web page, built for this setup, that
   lists each project's status and holds shared settings such as the session-naming options
@@ -102,7 +102,7 @@ A profile name is only a label. Nothing about the name scopes what the profile c
 - **Server panel:** SSH'd into the Linux server, running Claude Code under a named profile,
   working in the server's projects folder (`~/projects`).
 - **Mac panel:** plain `claude` (default `~/.claude` profile), working in the Mac's projects
-  folder (`~/Documents/GitHub`).
+  folder (`~/GitHub`).
 
 ### What's shared and what isn't
 
