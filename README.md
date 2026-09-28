@@ -5,6 +5,9 @@ account from two machines side by side: a local Mac and an always-on Linux serve
 driven from terminals in VS Code on the Mac. It includes the lessons from getting there, a
 setup checklist, and the scripts used.
 
+**To have Claude Code set this up for you:** clone this repo, start Claude Code in it, and
+tell it to follow `CLAUDE-SETUP.md`.
+
 **Terms:**
 
 - **The Mac:** the local macOS machine where the editor runs.
@@ -36,6 +39,7 @@ as a setting (`PROJECTS_ROOT`).
 | Path | What it is |
 |---|---|
 | `README.md` | This guide |
+| `CLAUDE-SETUP.md` | Instructions to hand to Claude Code so it sets this up for you |
 | `docs/profile-anatomy.md` | What's inside a profile, and what breaks when a piece is left behind |
 | `docs/lessons.md` | What went wrong migrating to a named profile, a repo made public without asking, and the multi-account plan that was dropped |
 | `scripts/profiles.sh` | Profile aliases, a shared plugin store, and `ccw` (launch inside a project) |
