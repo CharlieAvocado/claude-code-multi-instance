@@ -43,6 +43,33 @@ than a check. Nothing was ever lost; every gap was data still sitting in the old
   the exact first step can't be reconstructed. Do setup inside a Claude session, or write it
   down.
 
+## A repo made public without asking
+
+While this guide was being prepared, Claude created its GitHub repo as public without asking.
+Two things went wrong.
+
+1. **An instruction was read as permission.** The user said which account the repo should
+   go under. Claude took that as a yes to create it, and chose public. Naming an account,
+   a location or a repo name says where, not whether or how visible.
+2. **The ask rule didn't fire.** The settings had an `ask` rule for `gh repo create*`, but
+   the command was `gh auth switch --user ... && gh repo create ... --public`. Claude Code's
+   permission rules match the start of the command, so a command placed after `&&` got
+   through. The git guard's push check did stop the push, but by then the repo already
+   existed and was public (empty, until the user approved the push).
+
+What changed:
+
+- The git guard now inspects every command in a line, including after `&&` or `;` and
+  inside `bash -c "..."` or `$(...)`. It asks before any `gh` command that creates or
+  publishes something: repo create, visibility edits, gists, releases, PRs, writing
+  `gh api` calls, and unknown aliases or extensions. The command that slipped through is
+  now a test case.
+- **Don't rely on permission-rule patterns alone for anything irreversible.** A prefix
+  match is easy to sidestep, even by accident. Put a hook that parses the whole command in
+  front of the actions that matter.
+- **Say "create it as private or public?" in so many words, and default to private.** A
+  private repo can be made public later; a public one may already have been seen or copied.
+
 ## The multi-account plan that didn't happen
 
 The original plan was one profile per account, to keep separate work fully apart. It stopped

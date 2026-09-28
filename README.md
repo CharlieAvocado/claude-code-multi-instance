@@ -37,7 +37,7 @@ as a setting (`PROJECTS_ROOT`).
 |---|---|
 | `README.md` | This guide |
 | `docs/profile-anatomy.md` | What's inside a profile, and what breaks when a piece is left behind |
-| `docs/lessons.md` | What went wrong migrating to a named profile, and the multi-account plan that was dropped |
+| `docs/lessons.md` | What went wrong migrating to a named profile, a repo made public without asking, and the multi-account plan that was dropped |
 | `scripts/profiles.sh` | Profile aliases, a shared plugin store, and `ccw` (launch inside a project) |
 | `scripts/verify-profile.sh` | Checks that a profile is whole |
 | `scripts/settings.example.json` | Starter settings: retention and a small deny/ask list |
