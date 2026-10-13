@@ -32,6 +32,7 @@ ENV = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1",
            GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
            GIT_COMMITTER_EMAIL="t@t")
 ENV.pop("CLAUDECODE", None)
+ENV.pop(g.APPROVAL_VAR, None)  # an approved command's prefix must not leak into the tests
 
 
 def sh(cmd, cwd=T):
@@ -83,6 +84,17 @@ sh("git checkout -q -b squashed && echo y > s && git add s && git commit -q -m s
    "git merge -q --squash squashed && git commit -q -m squash", BR)
 sh("git checkout -q -b picked && echo p > p && git add p && git commit -q -m p && "
    "git checkout -q main && git cherry-pick picked", BR)
+
+# Trusted folder (stands in for one listed in trusted_roots): quieter layer 1
+TR = os.path.join(T, "trusted")
+os.mkdir(TR)
+g.TRUSTED_ROOTS = [TR]
+TPUB = repo("trusted/pub", [("origin", "https://github.com/octocat/Hello-World.git")])
+TPRIV = repo("trusted/priv", [("origin", "https://github.com/example-user/private-project.git")])
+TBR = repo("trusted/br", [("origin", BARE)])
+sh("git checkout -q -b unmerged && echo x > f && git add f && git commit -q -m u && "
+   "git checkout -q main && git worktree add -q wtclean -b wtc && "
+   "git worktree add -q wtdirty -b wtd && echo d > wtdirty/d", TBR)
 
 ASK, OK = "ask", "ok"
 CASES = [
@@ -224,6 +236,39 @@ CASES = [
     (BR, "git worktree remove wt", OK),
     (BR, "git worktree remove --force wt", ASK),
     (BR, "git worktree prune", OK),
+    # --- heredocs: text unless an interpreter reads it (everywhere)
+    (PRIV, "git commit -q -F - <<'EOF'\nRun git push after\nEOF", OK),
+    (PRIV, "cat > notes.md <<EOF\ngit push origin main\nEOF", OK),
+    (PRIV, "bash <<EOF\ngit push\nEOF", ASK),
+    (PRIV, "gh auth token --user X", OK),
+    # --- trusted folder: unparseable pushes go to layer 2
+    (TPRIV, "git push $REMOTE main", OK),
+    (TPRIV, "for d in a b; do git -C $d push; done", OK),
+    (TPRIV, "eval git push", OK),
+    (TPRIV, "git -C /nonexistent/dir push", OK),
+    (TPRIV, "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['git','push'])\nEOF", OK),
+    # ...but not these
+    (TPUB, "git push", ASK),
+    (TPRIV, "git push https://github.com/octocat/Hello-World.git main", ASK),
+    (TPRIV, "git push https://gitlab.com/x/y.git main", ASK),
+    (TPRIV, "git push --no-verify", ASK),
+    (TPRIV, "env -u CLAUDECODE git push", ASK),
+    (TPRIV, "sudo git push", ASK),
+    (TPRIV, "git -c core.hooksPath=/dev/null push", ASK),
+    (TPRIV, "export CLAUDE_GIT_GUARD_APPROVED=1; git push", ASK),
+    (TPRIV, "git send-pack x main", ASK),
+    (TPRIV, "GIT_DIR=$X git push", ASK),
+    (TPRIV, "docker push someone/image", ASK),
+    (TPRIV, "git lfs push origin main", ASK),
+    (TPRIV, "eval git push && gh repo create me/x --public", ASK),
+    (TPRIV, "gh repo create me/x --private", ASK),
+    # --- trusted folder: branch deletes archive, worktree removes check
+    (TBR, "git branch -D unmerged", OK),
+    (TBR, "git branch -D main", ASK),
+    (TPRIV, f"cd {BR} && git branch -D unmerged", ASK),  # BR is outside
+    (TBR, "git worktree remove --force wtclean", OK),
+    (TBR, "git worktree remove --force wtdirty", ASK),
+    (TBR, "git worktree remove --force nonexistent", ASK),
 ]
 # The github.com-work SSH alias only exists where ~/.ssh/config defines it; skip
 # the alias cases on a machine without it rather than fail the install.
@@ -250,6 +295,13 @@ def run_cases():
         if got != expect:
             fails += 1
             print(f"FAIL [{os.path.basename(d)}] {cmd!r}: expected {expect}, got {got} {reasons}")
+    arch = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "refs/archive/unmerged"],
+                          cwd=TBR, env=ENV, capture_output=True, text=True).stdout.strip()
+    tip = subprocess.run(["git", "rev-parse", "unmerged"], cwd=TBR, env=ENV,
+                         capture_output=True, text=True).stdout.strip()
+    if not arch or arch != tip:
+        fails += 1
+        print("FAIL trusted branch -D didn't save refs/archive/unmerged")
     print(f"layer 1: {len(CASES) - fails}/{len(CASES)} passed")
     return fails
 

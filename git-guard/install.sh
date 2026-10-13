@@ -19,6 +19,14 @@ sudo -H -u "$USER_NAME" "$PY" "$SRC/test_guard.py" --live
 echo "== installing to $DEST"
 install -d -o root -g "$GROUP" -m 755 "$DEST" "$HOOKS"
 install -o root -g "$GROUP" -m 644 "$SRC/git_guard.py" "$DEST/git_guard.py"
+# Optional: folders where the guard asks less (see README). The installed copy
+# is root-owned, so Claude can't add folders to it.
+if [ -f "$SRC/trusted_roots" ]; then
+  install -o root -g "$GROUP" -m 644 "$SRC/trusted_roots" "$DEST/trusted_roots"
+elif [ -f "$DEST/trusted_roots" ]; then
+  mv "$DEST/trusted_roots" "$DEST/trusted_roots.off"
+  echo "note: no trusted_roots here, so the installed one was renamed trusted_roots.off"
+fi
 install -o root -g "$GROUP" -m 755 "$SRC/git-hooks/pre-push" "$HOOKS/pre-push"
 install -o root -g "$GROUP" -m 755 "$SRC/git-hooks/chain" "$HOOKS/chain"
 for h in applypatch-msg pre-applypatch post-applypatch pre-commit pre-merge-commit \

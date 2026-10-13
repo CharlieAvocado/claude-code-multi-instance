@@ -16,6 +16,17 @@ Two entry points:
 The one rule everywhere: when in doubt, ask (layer 1) or refuse (layer 2).
 A push only goes through silently when every destination is positively
 confirmed private (anonymous GitHub API 404) or a local path.
+
+Inside trusted folders (TRUSTED_ROOTS, read from a root-owned trusted_roots
+file installed next to this script; none by default) layer 1 is quieter, for
+people who find themselves approving prompts unread:
+  - a command layer 1 merely can't parse goes through; layer 2 still sees
+    the real push URL and refuses a public one.
+  - branch -D of unmerged work goes through after the branch is saved to
+    refs/archive/<name> (restore: git branch <name> refs/archive/<name>).
+  - worktree remove --force asks only if the worktree has uncommitted changes.
+Tampering, unreachable/unknown push destinations, confirmed public pushes
+and publishing gh commands still ask everywhere.
 """
 import json
 import os
@@ -35,6 +46,25 @@ GITHUB_HOSTS = {"github.com", "www.github.com", "ssh.github.com"}
 NET_TIMEOUT = 8
 GIT_TIMEOUT = 20
 MAX_DEPTH = 4
+
+
+def _load_trusted():
+    """Folders listed in trusted_roots beside this script, one per line (~ ok,
+    # comments). No file, no trusted folders: layer 1 asks as strictly as ever."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trusted_roots")
+    try:
+        lines = open(path, encoding="utf-8").read().splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        line = line.split("#", 1)[0].strip()
+        if line and os.path.isabs(os.path.expanduser(line)):
+            out.append(os.path.expanduser(line))
+    return out
+
+
+TRUSTED_ROOTS = _load_trusted()
 
 # Any mention of these asks, whatever the command: they are the ways to
 # switch the guard off or forge an approval.
@@ -81,7 +111,24 @@ GLOBAL_OPTS_NO_VALUE = {"-p", "-P", "--paginate", "--no-pager", "--bare",
 
 
 class Unsure(Exception):
-    """The guard can't be certain. Always resolves to ask / refuse."""
+    """The guard can't be certain. Resolves to ask / refuse, except that in
+    a trusted folder layer 1 lets it through and leaves it to layer 2."""
+
+
+class Hard(Unsure):
+    """Asks even in a trusted folder: an attempt to switch off or step around
+    layer 2, or a push destination nobody can vouch for."""
+
+
+def trusted(path):
+    if not path:
+        return False
+    p = os.path.realpath(path)
+    for root in TRUSTED_ROOTS:
+        r = os.path.realpath(root)
+        if p == r or p.startswith(r + os.sep):
+            return True
+    return False
 
 
 # --------------------------------------------------------------- visibility
@@ -104,11 +151,11 @@ def github_visibility(owner, repo):
         result = "private" if data.get("private") is True else "public"
     except urllib.error.HTTPError as e:
         if e.code != 404:
-            raise Unsure(f"GitHub answered HTTP {e.code} when checking "
+            raise Hard(f"GitHub answered HTTP {e.code} when checking "
                          f"{owner}/{repo}")
         result = "private"
     except Exception as e:
-        raise Unsure(f"couldn't reach GitHub to check {owner}/{repo} "
+        raise Hard(f"couldn't reach GitHub to check {owner}/{repo} "
                      f"({e.__class__.__name__})")
     _vis_cache[key] = result
     return result
@@ -116,17 +163,17 @@ def github_visibility(owner, repo):
 
 def ssh_hostname(alias):
     if not alias or alias.startswith("-"):
-        raise Unsure(f"odd SSH host {alias!r}")
+        raise Hard(f"odd SSH host {alias!r}")
     try:
         r = subprocess.run(["ssh", "-G", alias], capture_output=True,
                            text=True, timeout=10, stdin=subprocess.DEVNULL)
     except Exception as e:
-        raise Unsure(f"couldn't resolve SSH host {alias} ({e.__class__.__name__})")
+        raise Hard(f"couldn't resolve SSH host {alias} ({e.__class__.__name__})")
     for line in r.stdout.splitlines():
         k, _, v = line.partition(" ")
         if k.lower() == "hostname" and v.strip():
             return v.strip().lower()
-    raise Unsure(f"couldn't resolve SSH host {alias}")
+    raise Hard(f"couldn't resolve SSH host {alias}")
 
 
 def github_path(path, url):
@@ -135,7 +182,7 @@ def github_path(path, url):
         p = p[:-4]
     parts = p.split("/")
     if len(parts) != 2 or not all(re.fullmatch(r"[A-Za-z0-9_.-]+", x) for x in parts):
-        raise Unsure(f"can't read owner/repo from {url}")
+        raise Hard(f"can't read owner/repo from {url}")
     return parts
 
 
@@ -143,16 +190,16 @@ def classify_url(url):
     """Return ('local'|'private'|'public', label). Raises Unsure."""
     u = (url or "").strip()
     if not u:
-        raise Unsure("empty remote URL")
+        raise Hard("empty remote URL")
     if "::" in u:
-        raise Unsure(f"remote helper URL {u}")
+        raise Hard(f"remote helper URL {u}")
     m = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*)://", u)
     if m:
         scheme = m.group(1).lower()
         if scheme == "file":
             return "local", u
         if scheme not in ("http", "https", "ssh", "git", "git+ssh", "ssh+git"):
-            raise Unsure(f"unknown transport {scheme}:// in {u}")
+            raise Hard(f"unknown transport {scheme}:// in {u}")
         sp = urllib.parse.urlsplit(u)
         host = (sp.hostname or "").lower()
         if scheme in ("ssh", "git+ssh", "ssh+git"):
@@ -166,7 +213,7 @@ def classify_url(url):
         else:
             return "local", u
     if host not in GITHUB_HOSTS:
-        raise Unsure(f"{host or u} isn't GitHub, so its visibility can't be checked")
+        raise Hard(f"{host or u} isn't GitHub, so its visibility can't be checked")
     owner, repo = github_path(path, u)
     return github_visibility(owner, repo), f"{owner}/{repo}"
 
@@ -241,6 +288,10 @@ def push_urls(base, cwd, env, remote):
 
 # ------------------------------------------------------------- shell parsing
 
+# A heredoc body is only commands when the line that opens it runs a shell
+# or interpreter; a commit message that mentions "git push" is just text.
+INTERPRETER_RE = re.compile(r"(?:^|[\s|;&(])(?:\S*/)?(?:ba|z|da|k)?sh\b|"
+                            r"\b(?:python[0-9.]*|perl|ruby|node|eval|xargs|source)\b")
 HEREDOC_RE = re.compile(r"(?<!<)<<(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2(?!<)")
 GIT_PUSH_RE = re.compile(r"\bgit\b[\s\S]*\bpush\b")
 GIT_BRANCH_DEL_RE = re.compile(r"\bgit\b[\s\S]*\bbranch\b[\s\S]*(-[A-Za-z]*D|--force|-[A-Za-z]*f)")
@@ -257,7 +308,7 @@ GH_ASK = {
     "gist": {"create", "new", "edit", "delete", "rename", "clone"},
     "release": None, "secret": None, "variable": None, "workflow": None,
     "ssh-key": None, "gpg-key": None, "alias": None, "extension": None,
-    "auth": {"login", "refresh", "setup-git", "token"},
+    "auth": {"login", "refresh", "setup-git"},
 }
 # Top-level gh commands that never publish. Anything else (including aliases
 # and extensions, which could expand to anything) asks.
@@ -288,7 +339,8 @@ def strip_heredocs(cmd):
         if not e:
             raise Unsure("unterminated heredoc")
         body = cmd[nl + 1:e.start()]
-        if GIT_PUSH_RE.search(body):
+        opener = cmd[cmd.rfind("\n", 0, m.start()) + 1:nl]
+        if GIT_PUSH_RE.search(body) and INTERPRETER_RE.search(opener):
             raise Unsure("a heredoc contains a git push")
         out.append(cmd[pos:nl + 1])
         pos = e.end()
@@ -358,7 +410,7 @@ def analyze(cmd, a, depth=0):
     low = cmd.lower()
     for t in TRIPWIRES:
         if t in low:
-            raise Unsure(f"command touches the guard's own settings ({t})")
+            raise Hard(f"command touches the guard's own settings ({t})")
     cmd = strip_heredocs(cmd)
     try:
         tokens = tokenize(cmd)
@@ -401,7 +453,7 @@ def analyze(cmd, a, depth=0):
         while w and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w[0]):
             k, _, v = w.pop(0).partition("=")
             if k.startswith("GIT_") and has_expansion(v):
-                raise Unsure(f"{k} is set from a variable")
+                raise Hard(f"{k} is set from a variable")
             env[k] = v
         # wrappers that run the rest of the line as a command
         while w:
@@ -417,14 +469,15 @@ def analyze(cmd, a, depth=0):
                 w.pop(0)
                 while w and (w[0].startswith("-") or "=" in w[0]):
                     if w[0].startswith("-"):
-                        raise Unsure("env with options")
+                        # -i/-u/-S can drop CLAUDECODE, which layer 2 relies on
+                        raise Hard("env with options")
                     k, _, v = w.pop(0).partition("=")
                     if k.startswith("GIT_") and has_expansion(v):
-                        raise Unsure(f"{k} is set from a variable")
+                        raise Hard(f"{k} is set from a variable")
                     env[k] = v
             elif w[0] == "sudo":
                 if "push" in w or "branch" in w:
-                    raise Unsure("git run through sudo")
+                    raise Hard("git run through sudo")
                 w = []
             else:
                 break
@@ -434,7 +487,7 @@ def analyze(cmd, a, depth=0):
 
         if head in ("export", "declare", "typeset", "local", "readonly"):
             if any(x.startswith("GIT_") for x in w[1:]):
-                raise Unsure("changes git's environment for the rest of the command")
+                raise Hard("changes git's environment for the rest of the command")
             continue
         if head in ("cd", "pushd"):
             args = [x for x in w[1:] if not x.startswith("-") or x == "-"]
@@ -523,7 +576,7 @@ def git_command(w, cwd, env, a):
     if has_expansion(sub):
         raise Unsure(f"git subcommand comes from a variable ({sub})")
     if sub in PUSH_PLUMBING:
-        raise Unsure(f"git {sub} pushes without going through git push")
+        raise Hard(f"git {sub} pushes without going through git push")
 
     if sub == "push":
         a.involves_push = True
@@ -539,7 +592,7 @@ def git_command(w, cwd, env, a):
     if sub == "worktree":
         if args[:1] == ["remove"] and any(x in ("--force", "-f") or
                                           re.fullmatch(r"-[a-z]*f[a-z]*", x) for x in args[1:]):
-            a.add("git worktree remove --force can throw away uncommitted work")
+            check_worktree_remove(base, args[1:], cwd, env, a)
         return 0, 0
     if sub not in SAFE_SUBCOMMANDS:
         if cwd is None:
@@ -570,7 +623,7 @@ def check_push(base, args, cwd, env, a):
             repo_opt = args[i + 1]
             i += 1
         elif not opts_done and t == "--no-verify":
-            raise Unsure("--no-verify switches off the push check")
+            raise Hard("--no-verify switches off the push check")
         elif not opts_done and (t.startswith("--receive-pack") or t.startswith("--exec")):
             raise Unsure(f"push with {t}")
         elif not opts_done and t.startswith("--recurse-submodules"):
@@ -594,6 +647,40 @@ def check_push(base, args, cwd, env, a):
         vis, label = classify_url(url)
         if vis == "public":
             a.add(f"pushes to PUBLIC GitHub repo {label}")
+
+
+def check_worktree_remove(base, args, cwd, env, a):
+    """In a trusted folder, a forced remove only asks if it would lose
+    uncommitted changes. Elsewhere it always asks."""
+    risk = "git worktree remove --force can throw away uncommitted work"
+    paths = [x for x in args if not x.startswith("-")]
+    if cwd is None or not trusted(cwd) or len(paths) != 1 or has_expansion(paths[0]):
+        a.add(risk)
+        return
+    wt = expand_path(paths[0], cwd)
+    try:
+        r = git(["git", "-C", wt], ["status", "--porcelain"], cwd, env)
+    except Unsure:
+        a.add(risk)
+        return
+    if r.returncode != 0:
+        a.add(risk)
+    elif r.stdout.strip():
+        a.add(f"worktree {paths[0]} has uncommitted changes; --force throws them away")
+
+
+def archive_branch(base, n, ref, cwd, env):
+    """Save a branch under refs/archive/ before it's deleted. True if saved."""
+    sha = git(base, ["rev-parse", "--verify", "--quiet", ref + "^{commit}"], cwd, env)
+    if sha.returncode != 0:
+        return False
+    sha = sha.stdout.strip()
+    target = f"refs/archive/{n}"
+    old = git(base, ["rev-parse", "--verify", "--quiet", target], cwd, env)
+    if old.returncode == 0 and old.stdout.strip() != sha:
+        target = f"refs/archive/{n}-{sha[:7]}"
+    r = git(base, ["update-ref", target, sha], cwd, env)
+    return r.returncode == 0
 
 
 def check_branch_delete(base, args, cwd, env, a):
@@ -646,10 +733,18 @@ def check_branch_delete(base, args, cwd, env, a):
         if (mt.returncode == 0 and tree.returncode == 0
                 and mt.stdout.split("\n")[0].strip() == tree.stdout.strip()):
             continue
+        if trusted(cwd) and archive_branch(base, n, ref, cwd, env):
+            continue
         a.add(f"branch {n} has work that isn't on {default}; force-deleting loses it")
 
 
 # -------------------------------------------------------------- entry points
+
+# When the parse gave up partway, these could still be in the unread part.
+# Layer 2 only covers git push, so they keep asking.
+SOFT_FALLBACK_RE = re.compile(r"\bgh\b|\bbranch\b[\s\S]*\s-[A-Za-z]*[Df]|--force\b|"
+                              r"\b(?:lfs|docker|podman|npm|subtree)\b[\s\S]*\b(?:push|publish)\b")
+
 
 def decide(command, cwd, env=None, visibility=None):
     """Return (reasons, involves_push). Empty reasons = no objection."""
@@ -657,8 +752,9 @@ def decide(command, cwd, env=None, visibility=None):
     try:
         analyze(command, a)
     except Unsure as e:
-        a.add(str(e))
-        a.involves_push = a.involves_push or bool(re.search(r"push", command))
+        if isinstance(e, Hard) or not trusted(cwd) or SOFT_FALLBACK_RE.search(command):
+            a.add(str(e))
+            a.involves_push = a.involves_push or bool(re.search(r"push", command))
     return a.reasons, a.involves_push
 
 
@@ -715,7 +811,7 @@ def prepush_main(argv):
                 "claude-git-guard: push refused. " + problem + ".\n"
                 "Pushes from a Claude session to a repo that isn't confirmed "
                 "private need the user's OK: run it as a plain `git push` "
-                "command so she's asked, or she can push from her own terminal.\n")
+                "command so they're asked, or she can push from her own terminal.\n")
             return 1
     return chain_repo_hook("pre-push", argv, stdin_data)
 

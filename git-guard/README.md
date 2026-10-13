@@ -24,6 +24,29 @@ has no dependency on the dashboard and runs standalone.
   `bash -c "..."`, rather than relying on Claude Code's own ask rules, which let one such
   command through.
 - Force-push, `git clean`, `filter-branch` and similar stay denied.
+- **Commit messages and notes are just text.** A heredoc that mentions `git push` asks only
+  when a shell or interpreter reads it (`bash <<EOF`, `python3 - <<EOF`), not when it's a
+  commit message or a file being written. `gh auth token` doesn't ask.
+
+## Quieter in trusted folders (optional)
+
+If you find yourself approving git prompts without reading them, list the folders where
+your projects live in a `trusted_roots` file next to `install.sh` (copy
+`trusted_roots.example`), then re-run the install. The installed copy is root-owned, so
+Claude can't add folders to it. Inside those folders:
+
+- **Commands the guard can't parse** (variables, loops, `eval`, scripts) go through. The
+  second layer still checks the real push URL and refuses a public one.
+- **`git branch -D` with unmerged work** goes through after the branch is saved as
+  `refs/archive/<name>`. Restore it with `git branch <name> refs/archive/<name>`.
+- **`git worktree remove --force`** asks only if the worktree has uncommitted changes.
+- **Still asks everywhere:** confirmed public pushes, push destinations it can't check
+  (non-GitHub hosts, GitHub unreachable), anything that could switch the second layer off
+  (`--no-verify`, `env -u`/`-i`, `sudo`, `GIT_*` set from variables, push plumbing, touching
+  `hooksPath` or the guard's files), publishing `gh` commands, and `docker`/`npm`/`lfs`
+  pushes.
+
+Without a `trusted_roots` file nothing changes: the guard asks as before everywhere.
 
 ## Install or update
 

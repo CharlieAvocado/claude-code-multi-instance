@@ -1,0 +1,5 @@
+# Folders where git-guard asks less (see README, "Quieter in trusted folders").
+# Copy this file to trusted_roots (same folder), list one absolute folder per
+# line (~ is fine), and re-run install.sh. Lines starting with # are ignored.
+# ~/projects
+# ~/code
